@@ -10,6 +10,6 @@ Hardware: Smart Roller and PSOC Pioneer Kit
 5. Enjoy using the Smart Roller!
 
 ## Demo
-![](/Demo/Demo_Video.mp4)
+![](Demo/Demo_Video.mp4)
 
 ## Screeshots
