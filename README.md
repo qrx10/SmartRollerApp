@@ -1,1 +1,3 @@
 # SmartRollerApp
+## Requirements:
+System: Windows
