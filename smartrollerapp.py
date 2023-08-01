@@ -2,7 +2,7 @@ import sys
 import random
 import numpy as np
 import pyqtgraph as pg
-from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QPushButton, QWidget, QFileDialog, QStackedWidget
+from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QPushButton, QWidget, QFileDialog, QStackedWidget,QCheckBox,QHBoxLayout,QComboBox
 from PyQt5.QtCore import QTimer
 from PyQt5 import QtGui
 import serial
@@ -17,6 +17,7 @@ import csv
 import os
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
 
 Channels = 113
 Taxels = 28
@@ -83,7 +84,7 @@ def thread1():
 
 
 
-class HeatmapWindow(QMainWindow):
+class MainWindow(QMainWindow):
     global pressure_vals,shear_vals_x,shear_vals_y,dz, timestamp
     def __init__(self):
         super().__init__()
@@ -279,6 +280,7 @@ class HeatmapWindow(QMainWindow):
     def serialplot(self):
         if not self.serialplotStatus:
             self.serialplotStatus = True
+            self.serialplot_button.setText("Heatmap")
             self.stacked_widget.setCurrentWidget(self.serial_plot_widget)
             self.start_button.hide()
         else:
@@ -307,46 +309,143 @@ def calcValues():
         # print(pressure_vals)
 
 class SerialPlotWidget(QWidget):
+    global dz, timestamp
     def __init__(self):
         super().__init__()
 
+        self.selected_channels = [1,2,3,4]
+        self.legend = None
+
         # Set up the figure and axis for the serial plot
         self.figure, self.ax = plt.subplots()
-        self.line, = self.ax.plot([], [], 'b-')
+        self.lines = [self.ax.plot([], [], label=f"Channel {i}")[0] for i in self.selected_channels]
         self.ax.set_xlabel('Time')
         self.ax.set_ylabel('Raw Count')
+        self.ax.legend()
+        
 
         # Set up the data and time arrays
-        self.data = []
+        self.data = [[] for _ in range(len(self.selected_channels))]
         self.time = []
+
+        self.channel_checkboxes = [QCheckBox() for i in range(4)]
+        for i, checkbox in enumerate(self.channel_checkboxes):
+            
+            checkbox.setChecked(True)
+
+            # Connect the combobox signal to the update_channel_selection function
+            checkbox.stateChanged.connect(self.update_channel_visibility)
+
+        # Create three QComboBoxes for channel selection
+        self.channel_comboboxes = [QComboBox() for _ in range(4)]
+        for i, combobox in enumerate(self.channel_comboboxes):
+            # combobox.addItem(f"Select Channel {i + 1}...")
+            for channel in range(Channels-1):
+                combobox.addItem(f"Channel {channel + 1}")
+
+            combobox.setCurrentIndex(i)
+
+            # Connect the combobox signal to the update_channel_selection function
+            combobox.currentIndexChanged.connect(self.update_channel_selection)
+
+        # Create an QHBoxLayout for the comboboxes
+        channel_layout = QHBoxLayout()
+        for checkbox, combobox in zip(self.channel_checkboxes, self.channel_comboboxes):
+            channel_h_layout = QHBoxLayout()
+            channel_h_layout.addWidget(checkbox)
+            channel_h_layout.addWidget(combobox)
+            channel_layout.addLayout(channel_h_layout)
 
         # Create a timer to update the plot at regular intervals
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_plot)
-        self.timer.start(10)  # Update plot every 100 ms
+        self.timer.start(50)  # Update plot every 50 ms
+        
 
         # Add the canvas to the widget
         layout = QVBoxLayout(self)
         layout.addWidget(FigureCanvas(self.figure))
+        layout.addLayout(channel_layout)
+
+        self.max_array_size = 1000
+        
 
     def update_plot(self):
         # In this example, we'll use a simple sine wave as an example data source
-        time = len(self.data) * 0.1  # Time in seconds
-        amplitude = np.sin(2 * np.pi * time)  # Sine wave with 1 Hz frequency
-
+        time = timestamp * 0.001  # Time in seconds
+        dzlist = dz.tolist()
+        rawcount = [dzlist[i-1] for i in self.selected_channels]
+        # print(self.selected_channels)
         # Append the new data to the arrays
         self.time.append(time)
-        self.data.append(amplitude)
+        for i in range(len(self.lines)):
+            self.data[i].append(rawcount[i])
 
-        # Update the plot data
-        self.line.set_data(self.time, self.data)
+        if len(self.time) > self.max_array_size:
+            self.time.pop(0)
+            for i in range(len(self.lines)):
+                self.data[i].pop(0)
 
-        # Adjust the plot limits to keep the view window moving
+        # Update the plot data for each channel
+        for i in range(len(self.lines)):
+            self.lines[i].set_data(self.time, self.data[i])
+            self.ax.relim()
+            self.ax.autoscale_view()
         self.ax.set_xlim(max(0, time - 10), time + 1)
-        self.ax.relim()
-        self.ax.autoscale_view()
+        # Redraw the plot
+        self.figure.canvas.draw()
+
+    def update_channel_selection(self):
+        self.selected_channels = []
+        for combobox in self.channel_comboboxes:
+            selected_index = combobox.currentIndex()
+            if 0 <= selected_index < Channels:
+                self.selected_channels.append(selected_index+1)
+
+        # Check if the total number of selected channels exceeds the maximum limit
+        # if len(selected_channels) > self.max_selected_channels:
+        #     for combobox in self.channel_comboboxes:
+        #         combobox.setEnabled(False)
+        #     return
+
+        # Enable all comboboxes if the total selected channels are within the limit
+        for combobox in self.channel_comboboxes:
+            combobox.setEnabled(True)
+
+        # Hide lines of unselected channels and show lines of selected channels
+        # for i, line in enumerate(self.lines):
+        #     line.set_visible(i in self.selected_channels)
+
+        self.data = [[] for _ in range(len(self.selected_channels))]
+        self.time = []
+
+        visible_lines = [line for line, checkbox in zip(self.lines, self.channel_checkboxes) if checkbox.isChecked()]
+        visible_labels = [f"Channel {self.selected_channels[i]}" for i, checkbox in enumerate(self.channel_checkboxes) if checkbox.isChecked()]
+        print(self.selected_channels)
+        if self.legend is not None:
+            self.legend.remove()
+        # Redraw the plot
+        # print(visible_labels)
+        self.ax.legend(visible_lines,visible_labels)
+        
+        self.figure.canvas.draw()
+
 
         # Redraw the plot
+        self.figure.canvas.draw()
+
+    def update_channel_visibility(self):
+        visible_channels =  [i for i, checkbox in enumerate(self.channel_checkboxes) if checkbox.isChecked()]
+        for i in range(len(self.lines)):
+            self.lines[i].set_visible(i in visible_channels)
+        visible_lines = [line for line, checkbox in zip(self.lines, self.channel_checkboxes) if checkbox.isChecked()]
+        visible_labels = [f"Channel {self.selected_channels[i]}" for i, checkbox in enumerate(self.channel_checkboxes) if checkbox.isChecked()]
+        if self.legend is not None:
+            self.legend.remove()
+        # Redraw the plot
+        # print(visible_labels)
+        self.ax.legend(visible_lines,visible_labels)
+        
         self.figure.canvas.draw()
 
 
@@ -436,7 +535,7 @@ if __name__ == "__main__":
     time.sleep(0.01)
     # calcValues()
     app = QApplication(sys.argv)
-    window = HeatmapWindow()
+    window = MainWindow()
     window.setGeometry(100, 100, 800, 600)
     window.show()
     sys.exit(app.exec_())
