@@ -2,7 +2,7 @@ import sys
 import random
 import numpy as np
 import pyqtgraph as pg
-from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QPushButton, QWidget, QFileDialog
+from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QPushButton, QWidget, QFileDialog, QStackedWidget
 from PyQt5.QtCore import QTimer
 from PyQt5 import QtGui
 import serial
@@ -15,6 +15,8 @@ from tkinter import messagebox
 import math
 import csv
 import os
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+import matplotlib.pyplot as plt
 
 Channels = 113
 Taxels = 28
@@ -95,9 +97,15 @@ class HeatmapWindow(QMainWindow):
         print(icon_path)
         self.setWindowIcon(QtGui.QIcon(icon_path))
 
+        # Create a stacked widget to manage different views
+        self.stacked_widget = QStackedWidget()
+        layout.addWidget(self.stacked_widget)
+
         # Create a PyqtGraph PlotWidget for the heatmap
         self.heatmap_widget = pg.PlotWidget(self)
         layout.addWidget(self.heatmap_widget)
+
+        self.serial_plot_widget = SerialPlotWidget()
 
         # Create start and record buttons
         self.start_button = QPushButton("Start Animation", self)
@@ -109,9 +117,19 @@ class HeatmapWindow(QMainWindow):
         self.browse_button = QPushButton("Browse", self)
         layout.addWidget(self.browse_button)
 
+        self.serialplot_button = QPushButton("Serial Plot", self)
+        layout.addWidget(self.serialplot_button)
+
         # Set up the heatmap plot
         self.img_item = pg.ImageItem()
         self.heatmap_widget.addItem(self.img_item)
+
+        # Add the widgets to the stacked widget
+        self.stacked_widget.addWidget(self.heatmap_widget)
+        self.stacked_widget.addWidget(self.serial_plot_widget)
+
+        # Initially, show the heatmap widget
+        self.stacked_widget.setCurrentWidget(self.heatmap_widget)
 
         # Set up the data array for the heatmap
         self.data = np.asarray(pressure_vals)
@@ -133,15 +151,20 @@ class HeatmapWindow(QMainWindow):
 
         self.recordStatus = False
         self.csv_file_path = None
+        self.serialplotStatus = False
+        self.serial_plot_widget.hide()
+
         # Connect the button click event to start the timer
         self.start_button.clicked.connect(self.toggle_timer)
         self.record_button.clicked.connect(self.toggle_record)
         self.browse_button.clicked.connect(self.browse_directory)
+        self.serialplot_button.clicked.connect(self.serialplot)
 
         self.logdata = []
         self.num_channels = Channels
         self.recordTimer.timeout.connect(self.start_recording_data)
         self.temp_timestamp = -1
+        
 
     def update_heatmap_and_arrows(self):
         self.img_item.setImage(self.data, levels=(-400,100))
@@ -216,7 +239,6 @@ class HeatmapWindow(QMainWindow):
 
             self.recordTimer.stop()
             
-
     def browse_directory(self):
         # self.output_dir = QFileDialog.getExistingDirectory(self, "Select Directory")
         # self.browse_button.setText(self.output_dir)
@@ -254,6 +276,16 @@ class HeatmapWindow(QMainWindow):
         if self.recordStatus:
             self.logdata.append([time]+logdata.tolist())
 
+    def serialplot(self):
+        if not self.serialplotStatus:
+            self.serialplotStatus = True
+            self.stacked_widget.setCurrentWidget(self.serial_plot_widget)
+            self.start_button.hide()
+        else:
+            self.serialplotStatus = False
+            self.stacked_widget.setCurrentWidget(self.heatmap_widget)
+            self.start_button.show()
+
 
 def calcValues():
     global average, dz
@@ -273,6 +305,49 @@ def calcValues():
 
         pressure_vals[taxel] = (c1_new + c3_new - c1_avg - c3_avg)/4
         # print(pressure_vals)
+
+class SerialPlotWidget(QWidget):
+    def __init__(self):
+        super().__init__()
+
+        # Set up the figure and axis for the serial plot
+        self.figure, self.ax = plt.subplots()
+        self.line, = self.ax.plot([], [], 'b-')
+        self.ax.set_xlabel('Time')
+        self.ax.set_ylabel('Raw Count')
+
+        # Set up the data and time arrays
+        self.data = []
+        self.time = []
+
+        # Create a timer to update the plot at regular intervals
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.update_plot)
+        self.timer.start(10)  # Update plot every 100 ms
+
+        # Add the canvas to the widget
+        layout = QVBoxLayout(self)
+        layout.addWidget(FigureCanvas(self.figure))
+
+    def update_plot(self):
+        # In this example, we'll use a simple sine wave as an example data source
+        time = len(self.data) * 0.1  # Time in seconds
+        amplitude = np.sin(2 * np.pi * time)  # Sine wave with 1 Hz frequency
+
+        # Append the new data to the arrays
+        self.time.append(time)
+        self.data.append(amplitude)
+
+        # Update the plot data
+        self.line.set_data(self.time, self.data)
+
+        # Adjust the plot limits to keep the view window moving
+        self.ax.set_xlim(max(0, time - 10), time + 1)
+        self.ax.relim()
+        self.ax.autoscale_view()
+
+        # Redraw the plot
+        self.figure.canvas.draw()
 
 
 def select_com_port():
