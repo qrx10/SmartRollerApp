@@ -8,3 +8,8 @@ Hardware: Smart Roller and PSOC Pioneer Kit
 3. Unzip the zip file and double click on smartrollerapp.exe
 4. Choose a COM Port from the menu. The name is usually "KitProg3"
 5. Enjoy using the Smart Roller!
+
+## Demo
+![](/Demo/Demo_Video.mp4)
+
+## Screeshots
