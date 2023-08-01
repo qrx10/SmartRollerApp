@@ -1,4 +1,3 @@
-![ScreenShot2](https://github.com/qrx10/SmartRollerApp/assets/31019794/df70e270-f8a4-4fae-83c1-45dadcc32c42)
 # SmartRollerApp
 ## Requirements:
 System: Windows\
