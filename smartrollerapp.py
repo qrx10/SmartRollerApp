@@ -286,6 +286,7 @@ class MainWindow(QMainWindow):
         else:
             self.serialplotStatus = False
             self.stacked_widget.setCurrentWidget(self.heatmap_widget)
+            self.serialplot_button.setText("Serial Plot")
             self.start_button.show()
 
 
